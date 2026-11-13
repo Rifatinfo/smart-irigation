@@ -1,0 +1,55 @@
+model User {
+    id                 String         @id @default(uuid())
+    email              String?        @unique
+    name               String?
+    password           String?
+    avatar             String?
+    role               UserRole       @default(ADMIN)
+    isDeleted          Boolean        @default(false)
+    needPasswordChange Boolean        @default(true)
+    status             UserStatus     @default(ACTIVE)
+    auths              AuthProvider[]
+
+    
+    admin       Admin?
+    
+    createdAt DateTime @default(now())
+    updatedAt DateTime @updatedAt
+
+    @@map("users")
+}
+
+model AuthProvider {
+    id         String   @id @default(uuid())
+    provider   AuthType
+    providerId String? // Google
+    password   String? // Only for credentials login
+    userId     String
+    isDeleted  Boolean  @default(false)
+
+    user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+    createdAt DateTime @default(now())
+    updatedAt DateTime @updatedAt
+
+    @@unique([provider, providerId])
+    @@map("auth_providers")
+}
+
+
+model Admin {
+    id       String  @id @default(uuid())
+    userId   String  @unique
+    name     String?
+    email    String  @unique
+    password String?
+    phone    String?
+    avatar   String?
+    user     User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+    isDeleted Boolean @default(false)
+    createdAt DateTime @default(now())
+    updatedAt DateTime @updatedAt
+
+    @@map("admins")
+}
+

@@ -1,0 +1,14 @@
+model User {
+  id                 String     @id @default(uuid())
+  email              String     @unique
+  name               String?
+  password           String
+  role               UserRole   @default(ADMIN)
+  status             UserStatus @default(ACTIVE)
+  needPasswordChange Boolean    @default(false) @map("need_password_change")
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  @@map("users")
+}

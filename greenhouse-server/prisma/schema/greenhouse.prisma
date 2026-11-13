@@ -1,0 +1,172 @@
+// ─────────────────────────────────────────────────────────────
+//  Smart Irrigation / Greenhouse Controller
+// ─────────────────────────────────────────────────────────────
+
+model Device {
+  id              String   @id @default(uuid())
+  name            String
+  apiKeyHash      String   @unique @map("api_key_hash")
+  apiKeyPrefix    String   @map("api_key_prefix")
+  firmwareVersion String?  @map("firmware_version")
+  ipAddress       String?  @map("ip_address")
+  rssi            Int?
+  /// Free-form labels shown on the dashboard, e.g. {"soil":"Capacitive v2.0 on A0"}
+  hardwareInfo    Json?    @map("hardware_info")
+  isOnline        Boolean  @default(false) @map("is_online")
+  lastSeenAt      DateTime? @map("last_seen_at") @db.Timestamptz(3)
+  /// Bumped every time settings change so the device knows to re-read its config
+  configVersion   Int      @default(1) @map("config_version")
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  settings  DeviceSettings?
+  actuators ActuatorState[]
+  readings  SensorReading[]
+  events    ActuatorEvent[]
+  alerts    Alert[]
+  logs      ActivityLog[]
+
+  @@map("devices")
+}
+
+model DeviceSettings {
+  id       String @id @default(uuid())
+  deviceId String @unique @map("device_id")
+  device   Device @relation(fields: [deviceId], references: [id], onDelete: Cascade)
+
+  // Soil / pump
+  soilDryThreshold   Float @default(35) @map("soil_dry_threshold")   // pump starts below this (%)
+  soilWetTarget      Float @default(62) @map("soil_wet_target")      // pump stops at/above this (%)
+  pumpMaxRunSec      Int   @default(30) @map("pump_max_run_sec")     // hard cap per run
+  pumpMinIntervalMin Int   @default(10) @map("pump_min_interval_min") // soak time between runs
+  soilRawDry         Int   @default(3100) @map("soil_raw_dry")       // ADC value in dry air (calibration)
+  soilRawWet         Int   @default(1300) @map("soil_raw_wet")       // ADC value in water (calibration)
+
+  // Temperature / buzzer
+  tempAlarmThreshold  Float @default(32) @map("temp_alarm_threshold")  // buzzer above (°C)
+  tempAlarmHysteresis Float @default(1) @map("temp_alarm_hysteresis")  // clears at threshold - this
+  tempLowThreshold    Float @default(15) @map("temp_low_threshold")    // "too cold" label only
+
+  // Humidity (monitor only)
+  humidityMin Float @default(45) @map("humidity_min")
+  humidityMax Float @default(80) @map("humidity_max")
+
+  // Light / grow light
+  lightOnThreshold         Float   @default(1500) @map("light_on_threshold")        // grow light on below (lux)
+  lightHysteresisPct       Float   @default(20) @map("light_hysteresis_pct")        // off at threshold * (1 + pct/100)
+  growLightMinSwitchSec    Int     @default(300) @map("grow_light_min_switch_sec")  // anti-flicker
+  growLightScheduleEnabled Boolean @default(false) @map("grow_light_schedule_enabled")
+  growLightStart           String  @default("06:00") @map("grow_light_start")
+  growLightEnd             String  @default("22:00") @map("grow_light_end")
+  timezone                 String  @default("Asia/Dhaka")
+
+  // Device / system
+  readingIntervalSec Int @default(10) @map("reading_interval_sec")
+  offlineAfterSec    Int @default(60) @map("offline_after_sec")
+  dataRetentionDays  Int @default(90) @map("data_retention_days")
+
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  @@map("device_settings")
+}
+
+model ActuatorState {
+  id          String       @id @default(uuid())
+  deviceId    String       @map("device_id")
+  device      Device       @relation(fields: [deviceId], references: [id], onDelete: Cascade)
+  actuator    ActuatorType
+  mode        ControlMode  @default(AUTO)
+  /// What the server wants the hardware to do right now
+  desiredOn   Boolean      @default(false) @map("desired_on")
+  /// What the hardware last reported it is actually doing
+  reportedOn  Boolean?     @map("reported_on")
+  manualUntil DateTime?    @map("manual_until") @db.Timestamptz(3)
+  reason      String?
+  lastChangedAt DateTime?  @map("last_changed_at") @db.Timestamptz(3)
+  lastOnAt    DateTime?    @map("last_on_at") @db.Timestamptz(3)
+  lastOffAt   DateTime?    @map("last_off_at") @db.Timestamptz(3)
+  updatedAt   DateTime     @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  @@unique([deviceId, actuator])
+  @@map("actuator_states")
+}
+
+model SensorReading {
+  id           Int      @id @default(autoincrement())
+  deviceId     String   @map("device_id")
+  device       Device   @relation(fields: [deviceId], references: [id], onDelete: Cascade)
+  soilMoisture Float?   @map("soil_moisture")
+  soilRaw      Int?     @map("soil_raw")
+  temperature  Float?
+  humidity     Float?
+  lightLux     Float?   @map("light_lux")
+  pumpOn       Boolean? @map("pump_on")
+  growLightOn  Boolean? @map("grow_light_on")
+  buzzerOn     Boolean? @map("buzzer_on")
+  rssi         Int?
+  createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  @@index([deviceId, createdAt])
+  @@index([createdAt])
+  @@map("sensor_readings")
+}
+
+/// One row per ON period of an actuator (pump run, grow-light session, buzzer alarm)
+model ActuatorEvent {
+  id          Int           @id @default(autoincrement())
+  deviceId    String        @map("device_id")
+  device      Device        @relation(fields: [deviceId], references: [id], onDelete: Cascade)
+  actuator    ActuatorType
+  source      TriggerSource
+  reason      String?
+  startedAt   DateTime      @map("started_at") @db.Timestamptz(3)
+  endedAt     DateTime?     @map("ended_at") @db.Timestamptz(3)
+  durationSec Int?          @map("duration_sec")
+  soilBefore  Float?        @map("soil_before")
+  soilAfter   Float?        @map("soil_after")
+  /// TARGET_REACHED | MAX_RUNTIME | MANUAL | SENSOR_FAULT | SCHEDULE | THRESHOLD | CLEARED | ACKNOWLEDGED
+  endReason   String?       @map("end_reason")
+
+  @@index([deviceId, actuator, startedAt])
+  @@index([startedAt])
+  @@map("actuator_events")
+}
+
+model Alert {
+  id             String        @id @default(uuid())
+  deviceId       String        @map("device_id")
+  device         Device        @relation(fields: [deviceId], references: [id], onDelete: Cascade)
+  type           AlertType
+  /// e.g. "HIGH_TEMPERATURE" or "SENSOR_FAULT:soil" — only one open alert per key
+  dedupeKey      String        @map("dedupe_key")
+  severity       AlertSeverity
+  status         AlertStatus   @default(ACTIVE)
+  title          String
+  message        String
+  value          Float?
+  threshold      Float?
+  openedAt       DateTime      @default(now()) @map("opened_at") @db.Timestamptz(3)
+  acknowledgedAt DateTime?     @map("acknowledged_at") @db.Timestamptz(3)
+  resolvedAt     DateTime?     @map("resolved_at") @db.Timestamptz(3)
+
+  @@index([deviceId, status])
+  @@index([deviceId, dedupeKey, status])
+  @@index([openedAt])
+  @@map("alerts")
+}
+
+model ActivityLog {
+  id        Int       @id @default(autoincrement())
+  deviceId  String?   @map("device_id")
+  device    Device?   @relation(fields: [deviceId], references: [id], onDelete: Cascade)
+  level     LogLevel  @default(INFO)
+  source    LogSource
+  message   String
+  meta      Json?
+  createdAt DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  @@index([deviceId, createdAt])
+  @@index([createdAt])
+  @@map("activity_logs")
+}

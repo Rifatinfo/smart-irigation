@@ -1,0 +1,64 @@
+enum UserRole {
+  ADMIN
+}
+
+enum UserStatus {
+  ACTIVE
+  INACTIVE
+}
+
+enum ActuatorType {
+  PUMP
+  GROW_LIGHT
+  BUZZER
+}
+
+/// AUTO = software automation decides, ON/OFF = manual override
+enum ControlMode {
+  AUTO
+  ON
+  OFF
+}
+
+enum TriggerSource {
+  AUTO
+  MANUAL
+  SAFETY
+  SYSTEM
+}
+
+enum LogLevel {
+  INFO
+  WARNING
+  CRITICAL
+}
+
+enum LogSource {
+  SENSOR
+  PUMP
+  GROW_LIGHT
+  BUZZER
+  DEVICE
+  SETTINGS
+  ALERT
+  AUTH
+  SYSTEM
+}
+
+enum AlertType {
+  HIGH_TEMPERATURE
+  DEVICE_OFFLINE
+  SENSOR_FAULT
+  PUMP_INEFFECTIVE
+}
+
+enum AlertSeverity {
+  WARNING
+  CRITICAL
+}
+
+enum AlertStatus {
+  ACTIVE
+  ACKNOWLEDGED
+  RESOLVED
+}

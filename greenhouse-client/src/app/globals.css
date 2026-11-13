@@ -1,0 +1,67 @@
+/* Fonts (Inter, Fraunces) are loaded from Google Fonts by a <link> in src/app/layout.tsx */
+
+/* CRITICAL: THE FOLLOWING TAILWIND IMPORT MUST NEVER BE DELETED — DO NOT DELETE THIS COMMENT */
+@import 'tailwindcss';
+/* END TAILWIND IMPORTS — ALL OTHER CSS MUST GO BELOW THIS LINE */
+
+/* Tablet/desktop screens with little height (e.g. 1366×768 laptops): used to keep the dashboard cards on one screen */
+@custom-variant short (@media (width >= 48rem) and (height < 820px));
+
+@theme {
+  --font-sans: 'Inter', ui-sans-serif, system-ui, sans-serif;
+  --font-display: 'Fraunces', Georgia, serif;
+
+  --color-canvas: #f3f2ec;
+  --color-surface: #ffffff;
+  --color-sunken: #f8f7f2;
+  --color-ink: #16211b;
+  --color-muted: #5f6b63;
+  --color-faint: #8b958e;
+  --color-line: #e3e1d7;
+  --color-edge: #d2cfc1;
+
+  --color-forest: #1e4636;
+  --color-forest-hover: #173a2c;
+  --color-forest-deep: #11261d;
+  --color-forest-line: #24402f;
+  --color-leaf: #a8cf8e;
+  --color-mint: #e7f0e2;
+
+  --color-temp: #d1603a;
+  --color-humid: #3a87a8;
+  --color-soil: #8a6a3f;
+  --color-light: #c9950f;
+
+  --color-ok: #2f7d52;
+  --color-ok-soft: #e4f1e8;
+  --color-warn: #b07a0c;
+  --color-warn-soft: #faf0d9;
+  --color-danger: #be3d2a;
+  --color-danger-soft: #fbe6e2;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  font-family: var(--font-sans);
+  background: var(--color-canvas);
+  color: var(--color-ink);
+  -webkit-font-smoothing: antialiased;
+}
+
+.tabular {
+  font-variant-numeric: tabular-nums;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}

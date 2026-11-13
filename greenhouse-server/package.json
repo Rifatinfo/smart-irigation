@@ -1,0 +1,49 @@
+{
+  "name": "greenhouse-server",
+  "version": "1.0.0",
+  "description": "Smart Irrigation / Greenhouse Controller backend (ESP32 ingest, automation, history, realtime)",
+  "main": "dist/server.js",
+  "license": "MIT",
+  "engines": { "node": ">=20" },
+  "scripts": {
+    "dev": "ts-node-dev --respawn --transpile-only ./src/server.ts",
+    "build": "prisma generate --schema=./prisma/schema && tsc",
+    "start": "node dist/server.js",
+    "start:prod": "prisma migrate deploy --schema=./prisma/schema && node dist/scripts/seed.js && node dist/server.js",
+    "typecheck": "tsc --noEmit",
+    "test": "node --require ts-node/register/transpile-only --test \"tests/**/*.test.ts\"",
+    "seed": "ts-node-dev --transpile-only ./src/scripts/seed.ts",
+    "device:rotate-key": "ts-node-dev --transpile-only ./src/scripts/rotate-key.ts",
+    "simulate": "ts-node-dev --transpile-only ./src/scripts/simulate-device.ts",
+    "db:generate": "prisma generate --schema=./prisma/schema",
+    "db:migrate": "prisma migrate dev --schema=./prisma/schema",
+    "db:deploy": "prisma migrate deploy --schema=./prisma/schema",
+    "db:studio": "prisma studio --schema=./prisma/schema",
+    "postinstall": "prisma generate --schema=./prisma/schema"
+  },
+  "dependencies": {
+    "@prisma/adapter-pg": "^7.4.0",
+    "@prisma/client": "^7.4.0",
+    "bcryptjs": "^3.0.3",
+    "cookie-parser": "^1.4.7",
+    "cors": "^2.8.5",
+    "dotenv": "^17.0.1",
+    "express": "^5.1.0",
+    "express-rate-limit": "^8.2.1",
+    "jsonwebtoken": "^9.0.3",
+    "pg": "^8.16.3",
+    "prisma": "^7.4.0",
+    "zod": "^4.0.3"
+  },
+  "devDependencies": {
+    "@types/cookie-parser": "^1.4.9",
+    "@types/cors": "^2.8.19",
+    "@types/express": "^5.0.3",
+    "@types/jsonwebtoken": "^9.0.10",
+    "@types/node": "^24.0.10",
+    "@types/pg": "^8.15.6",
+    "ts-node": "^10.9.2",
+    "ts-node-dev": "^2.0.0",
+    "typescript": "^5.8.3"
+  }
+}
