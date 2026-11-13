@@ -133,6 +133,84 @@ export function decideTempAlarm(
   return temperature <= s.tempAlarmThreshold - s.tempAlarmHysteresis ? 'CLOSE' : 'KEEP';
 }
 
+export type ThresholdAlertKey = 'SOIL_DRY' | 'HUMIDITY_OUT_OF_RANGE' | 'LOW_TEMPERATURE';
+
+export interface ThresholdAlertAction {
+  key: ThresholdAlertKey;
+  action: 'OPEN' | 'CLOSE';
+  title: string;
+  message: string;
+  value: number;
+  threshold: number;
+}
+
+/**
+ * Threshold alerts for the monitored values (the over-temperature alarm is handled separately because it drives the buzzer).
+ * Each alert opens when the value crosses its limit and only closes once the value is back inside by a margin,
+ * so sensor noise around a limit does not open/close the same alert every reading.
+ * `open` = keys whose alert is currently open. A missing value (sensor fault) never opens or closes anything.
+ */
+export function decideThresholdAlerts(s: EngineSettings, x: Sample, open: ReadonlySet<ThresholdAlertKey>): ThresholdAlertAction[] {
+  const out: ThresholdAlertAction[] = [];
+
+  if (x.soil !== null) {
+    const margin = Math.min(3, Math.max(0.5, (s.soilWetTarget - s.soilDryThreshold) / 4));
+    if (!open.has('SOIL_DRY') && x.soil < s.soilDryThreshold) {
+      out.push({
+        key: 'SOIL_DRY', action: 'OPEN', title: `Soil dry: ${r1(x.soil)}%`,
+        message: `Soil moisture fell below the ${s.soilDryThreshold}% watering threshold`,
+        value: x.soil, threshold: s.soilDryThreshold,
+      });
+    } else if (open.has('SOIL_DRY') && x.soil >= s.soilDryThreshold + margin) {
+      out.push({
+        key: 'SOIL_DRY', action: 'CLOSE', title: 'Soil moisture recovered',
+        message: `soil back to ${r1(x.soil)}%`, value: x.soil, threshold: s.soilDryThreshold,
+      });
+    }
+  }
+
+  if (x.humidity !== null) {
+    const margin = Math.min(2, Math.max(0, (s.humidityMax - s.humidityMin) / 4));
+    const low = x.humidity < s.humidityMin;
+    const high = x.humidity > s.humidityMax;
+    if (!open.has('HUMIDITY_OUT_OF_RANGE') && (low || high)) {
+      out.push({
+        key: 'HUMIDITY_OUT_OF_RANGE', action: 'OPEN',
+        title: low ? `Air too dry: ${r1(x.humidity)}%` : `Air too humid: ${r1(x.humidity)}%`,
+        message: `Relative humidity is ${low ? 'below' : 'above'} the healthy range of ${s.humidityMin}-${s.humidityMax}%`,
+        value: x.humidity, threshold: low ? s.humidityMin : s.humidityMax,
+      });
+    } else if (
+      open.has('HUMIDITY_OUT_OF_RANGE') &&
+      x.humidity >= s.humidityMin + margin &&
+      x.humidity <= s.humidityMax - margin
+    ) {
+      out.push({
+        key: 'HUMIDITY_OUT_OF_RANGE', action: 'CLOSE', title: 'Humidity back in range',
+        message: `humidity back to ${r1(x.humidity)}%`, value: x.humidity, threshold: s.humidityMin,
+      });
+    }
+  }
+
+  if (x.temperature !== null) {
+    const margin = Math.max(0.5, s.tempAlarmHysteresis);
+    if (!open.has('LOW_TEMPERATURE') && x.temperature < s.tempLowThreshold) {
+      out.push({
+        key: 'LOW_TEMPERATURE', action: 'OPEN', title: `Low temperature: ${r1(x.temperature)} °C`,
+        message: `Air temperature fell below ${s.tempLowThreshold} °C`,
+        value: x.temperature, threshold: s.tempLowThreshold,
+      });
+    } else if (open.has('LOW_TEMPERATURE') && x.temperature >= s.tempLowThreshold + margin) {
+      out.push({
+        key: 'LOW_TEMPERATURE', action: 'CLOSE', title: 'Temperature recovered',
+        message: `back to ${r1(x.temperature)} °C`, value: x.temperature, threshold: s.tempLowThreshold,
+      });
+    }
+  }
+
+  return out;
+}
+
 /** BUZZER: sounds while an un-acknowledged over-temperature alert is open (AUTO), or per manual override. */
 export function decideBuzzer(
   st: EngineState,

@@ -1,14 +1,16 @@
 'use client'
 
 import React, { useEffect, useRef, useState } from 'react'
-import Link from 'next/link'
 import { ChevronUp, LogOut } from 'lucide-react'
 import { Avatar } from '@/components/ui/Avatar'
-import { CURRENT_USER as user } from '@/lib/user'
+import { useGreenhouse } from '@/components/providers/GreenhouseProvider'
+import { displayName, roleLabel } from '@/lib/user'
 import { SidebarTooltip } from './SidebarTooltip'
 
 /** Account button at the bottom of the sidebar; opens a menu with the user's photo, name, email and Log out. */
 export function SidebarAccount({ collapsed }: { collapsed: boolean }) {
+  const { user: account, logout } = useGreenhouse()
+  const user = { name: displayName(account), email: account.email ?? '', role: roleLabel(account.role), avatar: null as string | null }
   const [open, setOpen] = useState(false)
   const ref = useRef<HTMLDivElement>(null)
 
@@ -25,7 +27,7 @@ export function SidebarAccount({ collapsed }: { collapsed: boolean }) {
   }, [open])
 
   return (
-    <div ref={ref} className="relative border-t border-edge px-3 py-3">
+    <div ref={ref} className="relative z-10 border-t border-line bg-surface/90 px-3 py-3 backdrop-blur-sm">
       {open && (
         <div
           role="menu"
@@ -42,14 +44,14 @@ export function SidebarAccount({ collapsed }: { collapsed: boolean }) {
             </div>
           </div>
           <div className="border-t border-line p-1.5">
-            <Link
-              href="/login"
+            <button
+              onClick={() => void logout()}
               role="menuitem"
-              className="flex h-10 items-center gap-3 rounded-lg px-2.5 text-sm font-medium text-danger transition-colors duration-150 hover:bg-danger-soft"
+              className="flex h-10 w-full items-center gap-3 rounded-lg px-2.5 text-sm font-medium text-danger transition-colors duration-150 hover:bg-danger-soft"
             >
               <LogOut className="h-[18px] w-[18px] shrink-0" />
               Log out
-            </Link>
+            </button>
           </div>
         </div>
       )}
@@ -68,7 +70,7 @@ export function SidebarAccount({ collapsed }: { collapsed: boolean }) {
           <>
             <span className="min-w-0 flex-1 truncate whitespace-nowrap text-sm">
               <span className="font-semibold text-ink">{user.name}</span>
-              <span className="text-muted"> · {user.role}</span>
+              
             </span>
             <ChevronUp className={`h-4 w-4 shrink-0 text-muted transition-transform duration-150 ${open ? '' : 'rotate-180'}`} />
           </>

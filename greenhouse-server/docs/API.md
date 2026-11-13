@@ -58,7 +58,9 @@ Response (also from `GET /device/config`, which the firmware may call at boot):
 
 | Method | Path | Body | Notes |
 |---|---|---|---|
-| POST | `/auth/login` | `{email, password}` | sets `accessToken` (1 h) + `refreshToken` (30 d) cookies; `data: {user, needPasswordChange, accessToken}` |
+| POST | `/auth/login` | `{email, password, remember?}` | sets `accessToken` (1 h) + `refreshToken` (30 d) cookies; `data: {user, needPasswordChange, accessToken}` |
+| GET | `/auth/config` | – | public: `{googleClientId}` (null = Google sign-in off) |
+| POST | `/auth/google` | `{accessToken, remember?}` | Google OAuth access token from Google Identity Services; the account's verified email must match an admin. Same cookies/response as `/auth/login` |
 | POST | `/auth/refresh-token` | – (cookie) or `{refreshToken}` | new access token |
 | POST | `/auth/logout` | – | clears cookies |
 | GET | `/auth/me` | – | current user |
@@ -79,7 +81,7 @@ Response (also from `GET /device/config`, which the firmware may call at boot):
   "sensors": {
     "soilMoisture": {
       "label": "Soil moisture", "sensor": "Capacitive v2.0 on A0", "unit": "%",
-      "value": 59, "status": { "code": "MOIST", "label": "Moist", "tone": "ok" },
+      "value": 59, "raw": 2240, "status": { "code": "MOIST", "label": "Moist", "tone": "ok" },
       "high24h": 61, "low24h": 35, "lastHourDelta": 0,
       "pumpStartsBelow": 35, "pumpStopsAt": 62,
       "nextWatering": { "etaSec": 46800, "estimatedAt": "...", "state": "trend" },  // state: trend | due | watering | steady | unknown
@@ -150,6 +152,7 @@ Returns the new settings; `meta.changed` lists what changed. Takes effect immedi
 | pumpMaxRunSec | 30 | 1–120 | longest single run |
 | pumpMinIntervalMin | 10 | 0–1440 | soak time between runs |
 | soilRawDry / soilRawWet | 3100 / 1300 | ADC | soil probe calibration |
+| pumpFlowLpm | 1.5 | 0.01–100 | pump flow (L/min), used to estimate water per run |
 | tempAlarmThreshold | 32 | −20–80 | buzzer above (°C) |
 | tempAlarmHysteresis | 1 | 0–20 | alarm clears at threshold − this |
 | tempLowThreshold | 15 | | "Too cold" badge below |
@@ -184,7 +187,7 @@ OFF: disabled until AUTO (or until `durationSec`).
 
 * `GET /logs?page=1&limit=50&level=INFO|WARNING|CRITICAL&source=PUMP|GROW_LIGHT|BUZZER|SENSOR|DEVICE|SETTINGS|ALERT|AUTH|SYSTEM&q=text&from=ISO&to=ISO` → `meta: {page, limit, total, totalPages}`
 * `GET /alerts?status=active|resolved|all&page=&limit=`
-  alert: `{id, type: HIGH_TEMPERATURE|DEVICE_OFFLINE|SENSOR_FAULT|PUMP_INEFFECTIVE, severity: WARNING|CRITICAL, status: ACTIVE|ACKNOWLEDGED|RESOLVED, title, message, value, threshold, openedAt, acknowledgedAt, resolvedAt}`
+  alert: `{id, type: HIGH_TEMPERATURE|SOIL_DRY|HUMIDITY_OUT_OF_RANGE|LOW_TEMPERATURE|DEVICE_OFFLINE|SENSOR_FAULT|PUMP_INEFFECTIVE, severity: WARNING|CRITICAL, status: ACTIVE|ACKNOWLEDGED|RESOLVED, title, message, value, threshold, openedAt, acknowledgedAt, resolvedAt}`
 * `POST /alerts/:id/acknowledge` silences the buzzer; the alert still resolves by itself when the condition clears.
 * `POST /alerts/acknowledge-all`
 

@@ -1,53 +1,40 @@
 'use client'
 
-import React, { createContext, useContext, useEffect, useMemo, useState } from 'react'
-import { CURRENT, CURRENT_GROW } from '@/lib/data'
+import React, { createContext, useContext, useMemo } from 'react'
+import { useGreenhouse } from '@/components/providers/GreenhouseProvider'
+import type { Actuators, Settings, Summary } from '@/lib/api'
 
-/** Demo scenarios: `/dashboard?state=watering` or `/dashboard?state=heat-alarm`. */
-export type DashboardState = 'default' | 'watering' | 'heat-alarm'
-
-type Readings = { soil: number; temperature: number; humidity: number; light: number }
+type Readings = { soil: number | null; temperature: number | null; humidity: number | null; light: number | null }
 
 type LiveReadings = {
+  summary: Summary
+  settings: Settings
   readings: Readings
+  actuators: Actuators
   pumpOn: boolean
   buzzerOn: boolean
   growOn: boolean
-  syncedAgo: number
 }
 
 const LiveReadingsContext = createContext<LiveReadings | null>(null)
 
-export function LiveReadingsProvider({ state = 'default', children }: { state?: DashboardState; children: React.ReactNode }) {
-  const [tick, setTick] = useState(0)
-  useEffect(() => {
-    const id = setInterval(() => setTick((t) => t + 1), 4000)
-    return () => clearInterval(id)
-  }, [])
+/** The dashboard's view of the live controller data (kept current by GreenhouseProvider's realtime stream). */
+export function LiveReadingsProvider({ children }: { children: React.ReactNode }) {
+  const { summary, settings } = useGreenhouse()
 
   const value = useMemo<LiveReadings>(() => {
-    // Live readings: the last sample, nudged slightly each tick, then overridden by the chosen state
-    const j = (amp: number) => Math.sin(tick * 1.7) * amp
-    const readings = {
-      soil: CURRENT.soil + j(0.3),
-      temperature: CURRENT.temperature + j(0.08),
-      humidity: CURRENT.humidity + j(0.4),
-      light: Math.max(10, CURRENT.light + j(4)),
-    }
-    if (state === 'watering') readings.soil = 33.6
-    if (state === 'heat-alarm') {
-      readings.temperature = 33.4
-      readings.humidity = 52
-      readings.light = 21400
-    }
+    const s = summary.sensors
+    const a = summary.actuators
     return {
-      readings,
-      pumpOn: state === 'watering',
-      buzzerOn: state === 'heat-alarm',
-      growOn: state === 'heat-alarm' ? false : !!CURRENT_GROW,
-      syncedAgo: 2 + (tick % 15) * 4,
+      summary,
+      settings,
+      readings: { soil: s.soilMoisture.value, temperature: s.temperature.value, humidity: s.humidity.value, light: s.light.value },
+      actuators: a,
+      pumpOn: a.pump?.isOn ?? false,
+      growOn: a.growLight?.isOn ?? false,
+      buzzerOn: a.buzzer?.isOn ?? false,
     }
-  }, [tick, state])
+  }, [summary, settings])
 
   return <LiveReadingsContext.Provider value={value}>{children}</LiveReadingsContext.Provider>
 }

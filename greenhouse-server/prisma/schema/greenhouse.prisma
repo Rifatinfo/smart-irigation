@@ -42,6 +42,7 @@ model DeviceSettings {
   pumpMinIntervalMin Int   @default(10) @map("pump_min_interval_min") // soak time between runs
   soilRawDry         Int   @default(3100) @map("soil_raw_dry")       // ADC value in dry air (calibration)
   soilRawWet         Int   @default(1300) @map("soil_raw_wet")       // ADC value in water (calibration)
+  pumpFlowLpm        Float @default(1.5) @map("pump_flow_lpm")       // litres per minute, to estimate water used
 
   // Temperature / buzzer
   tempAlarmThreshold  Float @default(32) @map("temp_alarm_threshold")  // buzzer above (°C)

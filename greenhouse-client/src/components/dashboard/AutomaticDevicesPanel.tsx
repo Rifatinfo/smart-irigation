@@ -1,17 +1,62 @@
 'use client'
 
 import React from 'react'
-import { format } from 'date-fns'
 import { Panel } from '@/components/ui/Panel'
 import { PanelHeader } from '@/components/ui/PanelHeader'
 import { TextLink } from '@/components/ui/TextLink'
-import { BUZZER_ALARMS, CURRENT_GROW, LAST_PUMP, NOW, THRESHOLDS, hoursMinutes } from '@/lib/data'
+import { useNow } from '@/components/providers/GreenhouseProvider'
+import type { Actuator } from '@/lib/api'
+import { fmtLitres, hoursMinutes, litres, shortTime } from '@/lib/data'
 import { DeviceCell } from './DeviceCell'
 import { useLiveReadings } from './LiveReadingsProvider'
 
+/** "Auto mode" / "Manual · on until 14:05" / "Manual · off" */
+export function modeText(a: Actuator | null) {
+  if (!a) return 'Not configured'
+  if (a.mode === 'AUTO') return 'Auto mode'
+  const until = a.manualUntil ? ` until ${shortTime(a.manualUntil)}` : ''
+  return `Manual · ${a.mode === 'ON' ? 'on' : 'off'}${until}`
+}
+
+/** Duration of the last completed ON period, from the actuator's last on/off timestamps. */
+function lastRunSec(a: Actuator) {
+  if (!a.lastOnAt || !a.lastOffAt) return null
+  const s = (new Date(a.lastOffAt).getTime() - new Date(a.lastOnAt).getTime()) / 1000
+  return s >= 0 ? Math.round(s) : null
+}
+
 export function AutomaticDevicesPanel() {
-  const { pumpOn, growOn, buzzerOn } = useLiveReadings()
-  const lastAlarm = BUZZER_ALARMS[BUZZER_ALARMS.length - 1]
+  const { actuators, settings, summary } = useLiveReadings()
+  const now = useNow(30_000)
+  const { pump, growLight, buzzer } = actuators
+  const pumpOn = pump?.isOn ?? false
+  const growOn = growLight?.isOn ?? false
+  const buzzerOn = buzzer?.isOn ?? false
+  const heat = summary.alerts.items.find((a) => a.type === 'HIGH_TEMPERATURE')
+
+  const pumpFooter = (() => {
+    if (!pump) return '—'
+    if (pumpOn) return `Started ${shortTime(pump.lastOnAt)} · ${pump.reason ?? 'watering'}`
+    const sec = lastRunSec(pump)
+    if (!pump.lastOnAt) return pump.reason ?? 'Has not run yet'
+    return `Last ran ${shortTime(pump.lastOnAt)}${sec !== null ? ` · ${sec}s, ≈ ${fmtLitres(litres(sec, settings.pumpFlowLpm))}` : ''}`
+  })()
+
+  const schedule = settings.growLightScheduleEnabled ? `, ${settings.growLightStart}–${settings.growLightEnd}` : ''
+  const growFooter = (() => {
+    if (!growLight) return '—'
+    if (growOn && growLight.lastOnAt) {
+      return `On for ${hoursMinutes(new Date(growLight.lastOnAt), new Date(now))}${settings.growLightScheduleEnabled ? ` · off by ${settings.growLightEnd}` : ''}`
+    }
+    return growLight.reason ?? 'Daylight is sufficient'
+  })()
+
+  const buzzerFooter = (() => {
+    if (!buzzer) return '—'
+    if (buzzerOn) return heat?.value != null ? `Triggered ${shortTime(heat.openedAt)} at ${heat.value.toFixed(1)} °C` : (buzzer.reason ?? 'Sounding')
+    if (heat?.status === 'ACKNOWLEDGED') return `Silenced · still above ${settings.tempAlarmThreshold - settings.tempAlarmHysteresis} °C`
+    return buzzer.lastOnAt ? `Last alarm ${shortTime(buzzer.lastOnAt)}` : 'No alarms yet'
+  })()
 
   return (
     <Panel className="mt-5">
@@ -22,36 +67,33 @@ export function AutomaticDevicesPanel() {
         <DeviceCell
           device="pump"
           name="Water pump"
+          mode={modeText(pump)}
           on={pumpOn}
           onText="Watering"
           offText="Idle"
-          rule={`On below ${THRESHOLDS.soilOn}% soil moisture, off at ${THRESHOLDS.soilOff}%`}
-          footer={pumpOn ? 'Started 20:00 · 1.4 L so far' : `Last ran ${format(LAST_PUMP.time, 'EEE HH:mm')} · ${LAST_PUMP.liters} L`}
+          rule={`On below ${settings.soilDryThreshold}% soil moisture, off at ${settings.soilWetTarget}% (max ${settings.pumpMaxRunSec}s per run)`}
+          footer={pumpFooter}
         />
         <DeviceCell
           device="growLight"
           name="Grow light"
+          mode={modeText(growLight)}
           on={growOn}
           onText="On"
           offText="Off"
-          rule={`On below ${THRESHOLDS.lightOn.toLocaleString('en-US')} lux, ${THRESHOLDS.photoStart}:00–${THRESHOLDS.photoEnd}:00`}
-          footer={growOn && CURRENT_GROW ? `On for ${hoursMinutes(CURRENT_GROW.start, NOW)} · off at 22:00` : 'Daylight is sufficient'}
+          rule={`On below ${settings.lightOnThreshold.toLocaleString('en-US')} lux${schedule}`}
+          footer={growFooter}
         />
         <DeviceCell
           device="buzzer"
           name="Heat buzzer"
+          mode={modeText(buzzer)}
           on={buzzerOn}
           onText="Sounding"
           offText="Silent"
           danger
-          rule={`Sounds above ${THRESHOLDS.tempAlarm} °C air temperature`}
-          footer={
-            buzzerOn
-              ? 'Triggered 20:00 at 33.4 °C'
-              : lastAlarm
-                ? `Last alarm ${format(lastAlarm.start, 'EEE HH:mm')} · peak ${lastAlarm.peak.toFixed(1)} °C`
-                : 'No alarms in 30 days'
-          }
+          rule={`Sounds above ${settings.tempAlarmThreshold} °C air temperature`}
+          footer={buzzerFooter}
         />
       </div>
     </Panel>

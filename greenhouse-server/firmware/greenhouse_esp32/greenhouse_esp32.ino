@@ -1,29 +1,30 @@
 /*
  * Smart Irrigation / Greenhouse Controller - ESP32 firmware
  * ---------------------------------------------------------------------------
- * Board : ESP32 ESP-32S 30P NodeMCU (Arduino core for ESP32 2.x or 3.x)
- * Talks to the greenhouse-server backend over HTTP(S):
- *   every N seconds  POST /api/v1/device/readings   (sensors + relay feedback)
- *   the response carries the commands (pump / grow light / buzzer) and the config.
- * All thresholds live on the server (dashboard Settings). If the server is unreachable
- * for OFFLINE_FALLBACK_MS the board keeps the greenhouse alive on its own with the
- * last thresholds it received.
+ * Board : ESP32 ESP-32S 30P NodeMCU (+ 30P expansion board)   Arduino core for ESP32 2.x or 3.x
  *
- * Libraries (Arduino Library Manager):
+ * Talks to the greenhouse-server backend over Wi-Fi (HTTP or HTTPS):
+ *   every N seconds  POST /api/v1/device/readings   (sensors + actual relay states)
+ *   the response carries the commands (pump / grow light / buzzer) and the current thresholds.
+ * All thresholds live on the server (dashboard Settings / Automation). If the server is unreachable
+ * for OFFLINE_FALLBACK_MS the board keeps the plants safe on its own with the last thresholds it received.
+ *
+ * Libraries (Arduino IDE > Library Manager):
  *   - ArduinoJson            (Benoit Blanchon)  v7.x
- *   - DHT sensor library     (Adafruit) + Adafruit Unified Sensor
- *   - BH1750                 (Christopher Laws)        [only if USE_BH1750 = 1]
+ *   - DHT sensor library     (Adafruit)  + "Adafruit Unified Sensor"
  *   - LiquidCrystal I2C      (Frank de Brabander)
+ *   - BH1750                 (Christopher Laws)   only if you add a BH1750 and set USE_BH1750 1
  *
- * Wiring (see README for the full table):
- *   DHT22 data ........ GPIO 4   (10k pull-up to 3.3V if your module has none)
- *   Soil sensor AOUT .. GPIO 34  (capacitive v2.0, powered from 3.3V)
- *   LDR module AO ..... GPIO 35  (only when USE_BH1750 = 0)
- *   I2C SDA / SCL ..... GPIO 21 / GPIO 22  (BH1750 0x23 + LCD backpack 0x27)
- *   Relay IN1 (pump) .. GPIO 26
- *   Relay IN2 (light) . GPIO 27
- *   Buzzer ............ GPIO 25  (via NPN transistor for a 5V buzzer)
- *   Red status LED .... GPIO 13  (220 ohm resistor)
+ * Wiring for the parts list (see greenhouse-server/README.md for the full table):
+ *   DHT22 module DATA ........ GPIO 4      VCC 3V3, GND
+ *   Capacitive soil AOUT ..... GPIO 34     VCC 3V3, GND
+ *   LDR module (4-pin) AO .... GPIO 35     VCC 3V3, GND  (DO not used)
+ *   LCD I2C adapter SDA/SCL .. GPIO 21 / GPIO 22   VCC 5V (VIN), GND
+ *   Relay IN1 (pump) ......... GPIO 26     relay VCC 5V (VIN), GND
+ *   Relay IN2 (grow light) ... GPIO 27
+ *   Active buzzer + .......... GPIO 25     buzzer - to GND
+ *   Red LED anode ............ GPIO 13 through a 220 ohm resistor, cathode to GND
+ *   Pump: 2xAA + -> relay 1 COM, relay 1 NO -> pump +, pump - -> 2xAA -
  */
 
 #include <WiFi.h>
@@ -37,18 +38,25 @@
 // ============================ USER SETTINGS ================================
 const char* WIFI_SSID      = "YOUR_WIFI_NAME";
 const char* WIFI_PASSWORD  = "YOUR_WIFI_PASSWORD";
-// Backend base URL, no trailing slash. LAN example: "http://192.168.0.10:5000"
+// Backend base URL, no trailing slash. The PC running `npm run dev` on the SAME Wi-Fi, e.g. "http://192.168.0.10:5000"
+// (find it with `ipconfig` on Windows -> IPv4 Address). Never "localhost": that would be the ESP32 itself.
 const char* SERVER_URL     = "http://192.168.0.10:5000";
-// API key printed by `npm run seed` (or POST /api/v1/devices)
+// API key printed by `npm run seed` (or Settings > Device API key > New key)
 const char* DEVICE_API_KEY = "ghk_PASTE_YOUR_DEVICE_KEY_HERE";
 
-#define USE_BH1750        1      // 1 = BH1750 lux sensor on I2C, 0 = LDR module on GPIO 35
-#define RELAY_ACTIVE_LOW  1      // most blue 2-channel relay boards switch ON with a LOW input
-#define LCD_ADDRESS       0x27   // try 0x3F if the screen stays blank
-#define LDR_LUX_FULL_SCALE 2000.0  // LDR only: rough lux when the LDR is fully lit (calibrate!)
+#define USE_BH1750         0      // 0 = LDR module on GPIO 35 (parts list), 1 = BH1750 lux sensor on I2C
+#define RELAY_ACTIVE_LOW   1      // most blue 2-channel relay boards switch ON with a LOW input; set 0 if inverted
+#define LCD_ADDRESS        0x27   // try 0x3F if the screen stays blank
+#define BUZZER_BEEP        1      // 1 = intermittent beep while the alarm is on, 0 = continuous tone
+
+// LDR module calibration (only USE_BH1750 0). The LDR gives an *estimate* of lux:
+#define LDR_BRIGHT_IS_LOW  1      // most LDR modules: AO voltage falls in bright light. Set 0 if yours rises.
+#define LDR_FIXED_OHMS     10000.0  // the module's fixed resistor (10k on almost all boards)
+#define LDR_R10_OHMS       15000.0  // LDR resistance at 10 lux (GL5528 ~ 10-20k). Raise it if lux reads too high.
+#define LDR_GAMMA          0.7      // LDR slope (GL55xx ~ 0.6-0.8)
 // ===========================================================================
 
-#define FW_VERSION "gh-esp32-1.0.0"
+#define FW_VERSION "gh-esp32-1.1.0"
 
 // ---- pins ----
 #define PIN_DHT     4
@@ -62,7 +70,8 @@ const char* DEVICE_API_KEY = "ghk_PASTE_YOUR_DEVICE_KEY_HERE";
 // ---- safety / timing ----
 const uint32_t PUMP_HARD_LIMIT_MS   = 120000;  // the pump can never run longer than this, whatever happens
 const uint32_t OFFLINE_FALLBACK_MS  = 120000;  // run local automation after 2 min without the server
-const uint32_t HTTP_TIMEOUT_MS      = 8000;
+const uint32_t HTTP_TIMEOUT_MS      = 5000;
+const uint32_t WIFI_RETRY_MS        = 10000;
 const uint32_t LCD_PAGE_MS          = 3000;
 
 DHT dht(PIN_DHT, DHT22);
@@ -89,13 +98,13 @@ struct Config {
 
 // ---- live state ----
 float tempC = NAN, humidity = NAN, lux = NAN;
-int soilRaw = -1;
+int soilRaw = -1, ldrRaw = -1;
 bool pumpOn = false, lightOn = false, buzzerOn = false;
 uint32_t pumpStartedMs = 0, pumpDeadlineMs = 0, pumpLastOffMs = 0;
 bool pumpLatchedOff = false;          // set after a local safety stop until the server says OFF
 uint32_t lastServerOkMs = 0;
 bool everReachedServer = false;
-uint32_t lastPostMs = 0, lastLcdMs = 0;
+uint32_t lastPostMs = 0, lastLcdMs = 0, lastWifiAttemptMs = 0;
 uint8_t lcdPage = 0;
 
 WiFiClient plainClient;
@@ -115,14 +124,27 @@ void setPump(bool on, uint32_t maxRunSec) {
     uint32_t limit = min<uint32_t>((uint32_t)maxRunSec * 1000UL, PUMP_HARD_LIMIT_MS);
     pumpStartedMs = millis();
     pumpDeadlineMs = pumpStartedMs + limit;
+    Serial.printf("Pump ON (max %lus)\n", (unsigned long)(limit / 1000));
   }
-  if (!on && pumpOn) pumpLastOffMs = millis();
+  if (!on && pumpOn) {
+    pumpLastOffMs = millis();
+    Serial.println("Pump OFF");
+  }
   pumpOn = on;
   setRelay(PIN_PUMP, on);
 }
 
 void setGrowLight(bool on) { lightOn = on; setRelay(PIN_LIGHT, on); }
-void setBuzzer(bool on)    { buzzerOn = on; digitalWrite(PIN_BUZZER, on ? HIGH : LOW); }
+void setBuzzer(bool on)    { buzzerOn = on; if (!on) digitalWrite(PIN_BUZZER, LOW); }
+
+// Pump hard limit: checked in the loop and around every blocking call.
+void pumpSafetyCheck() {
+  if (pumpOn && (int32_t)(millis() - pumpDeadlineMs) >= 0) {
+    Serial.println("Pump safety stop (max run time)");
+    setPump(false, 0);
+    pumpLatchedOff = true;
+  }
+}
 
 float soilPercent(int raw) {
   if (raw < 0 || cfg.soilRawDry == cfg.soilRawWet) return NAN;
@@ -130,19 +152,48 @@ float soilPercent(int raw) {
   return constrain(pct, 0.0f, 100.0f);
 }
 
+#if !USE_BH1750
+// Photoresistor -> approximate lux. Module = LDR + fixed resistor voltage divider.
+// R_ldr from the divider, then lux = 10 * (R10 / R_ldr)^(1/gamma).
+float ldrToLux(int raw) {
+  float v = constrain(raw / 4095.0f, 0.002f, 0.998f);   // fraction of supply voltage
+#if LDR_BRIGHT_IS_LOW
+  float rLdr = LDR_FIXED_OHMS * v / (1.0f - v);          // LDR between AO and GND
+#else
+  float rLdr = LDR_FIXED_OHMS * (1.0f - v) / v;          // LDR between VCC and AO
+#endif
+  float l = 10.0f * powf(LDR_R10_OHMS / rLdr, 1.0f / LDR_GAMMA);
+  return constrain(l, 0.0f, 100000.0f);
+}
+#endif
+
 // ============================================================================
-void connectWifi() {
-  if (WiFi.status() == WL_CONNECTED) return;
+// Wi-Fi: never blocks the loop for long, so pump safety keeps running while the network is down.
+void startWifi() {
   WiFi.mode(WIFI_STA);
+  WiFi.setHostname("greenhouse-esp32");
+  WiFi.setAutoReconnect(true);
+  WiFi.persistent(false);
   WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
+  lastWifiAttemptMs = millis();
   Serial.printf("WiFi: connecting to %s", WIFI_SSID);
-  uint32_t t0 = millis();
-  while (WiFi.status() != WL_CONNECTED && millis() - t0 < 15000) {
+  // At boot (pump is off) wait up to 15 s so the first reading goes out straight away
+  while (WiFi.status() != WL_CONNECTED && millis() - lastWifiAttemptMs < 15000) {
     delay(300);
     Serial.print('.');
     digitalWrite(PIN_LED, !digitalRead(PIN_LED));
   }
-  Serial.println(WiFi.status() == WL_CONNECTED ? " connected, IP " + WiFi.localIP().toString() : " failed (will retry)");
+  if (WiFi.status() == WL_CONNECTED) Serial.printf(" connected, IP %s, RSSI %d dBm\n", WiFi.localIP().toString().c_str(), WiFi.RSSI());
+  else Serial.println(" not yet (will keep retrying in the background)");
+}
+
+void ensureWifi() {
+  if (WiFi.status() == WL_CONNECTED) return;
+  if (millis() - lastWifiAttemptMs < WIFI_RETRY_MS) return;
+  lastWifiAttemptMs = millis();
+  Serial.println("WiFi: reconnecting...");
+  WiFi.disconnect();
+  WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
 }
 
 void readSensors() {
@@ -161,9 +212,10 @@ void readSensors() {
     lux = (l < 0) ? NAN : l;
   } else lux = NAN;
 #else
-  // LDR modules give a higher voltage in the dark on most boards: invert, then scale. Approximate only.
-  int raw = analogRead(PIN_LDR);
-  lux = (4095 - raw) / 4095.0 * LDR_LUX_FULL_SCALE;
+  sum = 0;
+  for (int i = 0; i < 8; i++) { sum += analogRead(PIN_LDR); delay(2); }
+  ldrRaw = sum / 8;
+  lux = ldrToLux(ldrRaw);
 #endif
 }
 
@@ -180,7 +232,7 @@ void applyConfig(JsonObject c) {
   cfg.lightHystPct  = c["light_hysteresis_pct"]   | cfg.lightHystPct;
   cfg.soilRawDry    = c["soil_raw_dry"]           | cfg.soilRawDry;
   cfg.soilRawWet    = c["soil_raw_wet"]           | cfg.soilRawWet;
-  if (cfg.intervalSec < 2) cfg.intervalSec = 2;
+  if (cfg.intervalSec < 2) cfg.intervalSec = 2;    // the DHT22 cannot be read faster
 }
 
 void applyCommands(JsonObject cmd, uint32_t pumpRunSec) {
@@ -194,6 +246,7 @@ void applyCommands(JsonObject cmd, uint32_t pumpRunSec) {
 
 bool httpBegin(HTTPClient& http, const String& url) {
   http.setTimeout(HTTP_TIMEOUT_MS);
+  http.setConnectTimeout(HTTP_TIMEOUT_MS);
   if (url.startsWith("https")) {
     tlsClient.setInsecure();  // encrypts traffic but skips certificate checks; pin a root CA for stricter security
     return http.begin(tlsClient, url);
@@ -233,8 +286,10 @@ bool postReading() {
   http.addHeader("Content-Type", "application/json");
   http.addHeader("x-api-key", DEVICE_API_KEY);
   int code = http.POST(body);
+  pumpSafetyCheck();
   if (code != 200) {
-    Serial.printf("POST failed: HTTP %d %s\n", code, code > 0 ? http.getString().c_str() : http.errorToString(code).c_str());
+    if (code == 401) Serial.println("POST rejected: wrong DEVICE_API_KEY (HTTP 401)");
+    else Serial.printf("POST failed: HTTP %d %s\n", code, code > 0 ? http.getString().c_str() : http.errorToString(code).c_str());
     http.end();
     return false;
   }
@@ -251,10 +306,11 @@ bool postReading() {
   return true;
 }
 
-// Local automation used only while the server is unreachable (same rules, simplified)
+// Local automation, used only while the server is unreachable (same rules, simplified)
 void fallbackAutomation() {
   float soil = soilPercent(soilRaw);
-  bool soaked = (millis() - pumpLastOffMs) > cfg.pumpSoakMin * 60000UL || pumpLastOffMs == 0;
+  bool soaked = pumpLastOffMs == 0 || (millis() - pumpLastOffMs) > cfg.pumpSoakMin * 60000UL;
+  if (pumpLatchedOff && soaked) pumpLatchedOff = false;   // no server to clear it: allow the next pulse after the soak time
   if (!pumpOn && !isnan(soil) && soil < cfg.soilDry && soaked && !pumpLatchedOff) setPump(true, cfg.pumpMaxRunSec);
   else if (pumpOn && (isnan(soil) || soil >= cfg.soilWet)) setPump(false, 0);
 
@@ -309,7 +365,7 @@ void setup() {
   pumpLastOffMs = 0;
 
   analogReadResolution(12);
-  analogSetAttenuation(ADC_11db);
+  analogSetAttenuation(ADC_11db);   // 0-3.3 V range on GPIO 34/35
 
   Wire.begin(21, 22);
   lcd.init();
@@ -323,7 +379,7 @@ void setup() {
   if (!bh1750Ok) Serial.println("BH1750 not found - check I2C wiring (address 0x23)");
 #endif
 
-  connectWifi();
+  startWifi();
   lastServerOkMs = millis();
 }
 
@@ -331,35 +387,46 @@ void loop() {
   uint32_t now = millis();
 
   // 1. hard pump safety, independent of everything else
-  if (pumpOn && (int32_t)(now - pumpDeadlineMs) >= 0) {
-    Serial.println("Pump safety stop (max run time)");
-    setPump(false, 0);
-    pumpLatchedOff = true;
-  }
+  pumpSafetyCheck();
 
-  // 2. reading cycle
+  // 2. keep Wi-Fi up without blocking
+  ensureWifi();
+
+  // 3. reading cycle
   if (now - lastPostMs >= cfg.intervalSec * 1000UL || lastPostMs == 0) {
     lastPostMs = now;
-    connectWifi();
     readSensors();
     if (postReading()) {
       lastServerOkMs = millis();
+      if (!everReachedServer) Serial.println("Connected to the greenhouse server - dashboard is live");
       everReachedServer = true;
     } else if (millis() - lastServerOkMs > OFFLINE_FALLBACK_MS) {
       fallbackAutomation();
     }
+#if USE_BH1750
     Serial.printf("soil_raw=%d (%.0f%%) T=%.1f H=%.0f L=%.0f | pump=%d light=%d buzzer=%d\n",
                   soilRaw, soilPercent(soilRaw), tempC, humidity, lux, pumpOn, lightOn, buzzerOn);
+#else
+    Serial.printf("soil_raw=%d (%.0f%%) T=%.1f H=%.0f ldr_raw=%d L~%.0f | pump=%d light=%d buzzer=%d\n",
+                  soilRaw, soilPercent(soilRaw), tempC, humidity, ldrRaw, lux, pumpOn, lightOn, buzzerOn);
+#endif
   }
 
   bool serverOk = everReachedServer && (millis() - lastServerOkMs) <= OFFLINE_FALLBACK_MS;
 
-  // 3. status LED: solid = alarm, slow blink = local mode / no server, off = all good
+  // 4. buzzer output (beep pattern while the alarm is on)
+#if BUZZER_BEEP
+  digitalWrite(PIN_BUZZER, buzzerOn && ((now / 400) % 2 == 0) ? HIGH : LOW);
+#else
+  digitalWrite(PIN_BUZZER, buzzerOn ? HIGH : LOW);
+#endif
+
+  // 5. status LED: solid = alarm, slow blink = local mode / no server, off = all good
   if (buzzerOn) digitalWrite(PIN_LED, HIGH);
   else if (!serverOk) digitalWrite(PIN_LED, (now / 500) % 2);
   else digitalWrite(PIN_LED, LOW);
 
-  // 4. LCD pages
+  // 6. LCD pages
   if (now - lastLcdMs >= LCD_PAGE_MS) {
     lastLcdMs = now;
     lcdPage = (lcdPage + 1) % 2;

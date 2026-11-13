@@ -1,36 +1,26 @@
 import type { Metadata } from 'next'
-import { format } from 'date-fns'
 import { PageContent } from '@/components/layout/PageContent'
 import { PageHeader } from '@/components/layout/PageHeader'
 import { AutomaticDevicesPanel } from '@/components/dashboard/AutomaticDevicesPanel'
 import { ClimateCard } from '@/components/dashboard/ClimateCard'
+import { ConnectionBanner } from '@/components/dashboard/ConnectionBanner'
 import { HeatAlarmBanner } from '@/components/dashboard/HeatAlarmBanner'
-import { LiveReadingsProvider, type DashboardState } from '@/components/dashboard/LiveReadingsProvider'
+import { LiveReadingsProvider } from '@/components/dashboard/LiveReadingsProvider'
 import { RecentActivityPanel } from '@/components/dashboard/RecentActivityPanel'
 import { SoilMoistureCard } from '@/components/dashboard/SoilMoistureCard'
 import { SyncStatus } from '@/components/dashboard/SyncStatus'
+import { TodayLabel } from '@/components/dashboard/TodayLabel'
 import { TrendsPanel } from '@/components/dashboard/TrendsPanel'
 import { WeekPanel } from '@/components/dashboard/WeekPanel'
-import { NOW } from '@/lib/data'
 
 export const metadata: Metadata = { title: 'Dashboard' }
 
-const STATES: DashboardState[] = ['default', 'watering', 'heat-alarm']
-
-type Props = { searchParams: Promise<{ state?: string }> }
-
-export default async function DashboardPage({ searchParams }: Props) {
-  const { state } = await searchParams
-  const scenario = STATES.find((s) => s === state) ?? 'default'
-
+export default function DashboardPage() {
   return (
-    <LiveReadingsProvider state={scenario}>
-      <PageHeader
-        title=""
-        subtitle={`${format(NOW, 'EEEE d MMMM')}`}
-        actions={<SyncStatus />}
-      />
+    <LiveReadingsProvider>
+      <PageHeader title="" subtitle={<TodayLabel />} actions={<SyncStatus />} />
       <PageContent>
+        <ConnectionBanner />
         <HeatAlarmBanner />
 
         {/* Row 1 — what the plants feel right now. From tablet up, the four cards exactly fill the visible

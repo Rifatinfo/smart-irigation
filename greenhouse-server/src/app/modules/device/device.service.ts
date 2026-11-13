@@ -1,5 +1,6 @@
 import { ActuatorType, Device, DeviceSettings } from '@prisma/client';
 import prisma from '../../../shared/prisma';
+import { decideThresholdAlerts, ThresholdAlertKey } from '../../../engine/automation';
 import { round, soilRawToPercent } from '../../../engine/math';
 import { Sample } from '../../../engine/types';
 import { logActivity, openAlert, resolveAlert } from '../../../services/activity';
@@ -56,7 +57,33 @@ async function trackSensorHealth(deviceId: string, sample: Record<string, number
   missing.set(deviceId, counters);
 }
 
-export const deviceConfigFor = (device: Device, s: DeviceSettings) => ({
+const THRESHOLD_ALERT_KEYS: ThresholdAlertKey[] = ['SOIL_DRY', 'HUMIDITY_OUT_OF_RANGE', 'LOW_TEMPERATURE'];
+
+/** Opens / resolves the dry-soil, humidity and low-temperature alerts for a new reading. */
+async function evaluateThresholdAlerts(deviceId: string, sample: Sample, settings: DeviceSettings) {
+  const openRows = await prisma.alert.findMany({
+    where: { deviceId, dedupeKey: { in: THRESHOLD_ALERT_KEYS }, status: { in: ['ACTIVE', 'ACKNOWLEDGED'] } },
+    select: { dedupeKey: true },
+  });
+  const open = new Set(openRows.map((a) => a.dedupeKey as ThresholdAlertKey));
+  for (const a of decideThresholdAlerts(settings, sample, open)) {
+    if (a.action === 'OPEN') {
+      await openAlert({
+        deviceId,
+        type: a.key,
+        severity: 'WARNING',
+        title: a.title,
+        message: a.message,
+        value: a.value,
+        threshold: a.threshold,
+      });
+    } else {
+      await resolveAlert(deviceId, a.key, a.message);
+    }
+  }
+}
+
+export const deviceConfigFor =(device: Device, s: DeviceSettings) => ({
   config_version: device.configVersion,
   config: {
     reading_interval_sec: s.readingIntervalSec,
@@ -137,6 +164,8 @@ export async function ingestReading(device: Device, p: ReadingPayload, ip: strin
     humidity: sample.humidity,
     light: sample.lux,
   });
+
+  await evaluateThresholdAlerts(device.id, sample, settings);
 
   // ── automation ─────────────────────────────────────────────
   const reported: Partial<Record<ActuatorType, boolean | null>> = {};

@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
   decideBuzzer,
+  decideThresholdAlerts,
   decideGrowLight,
   decidePump,
   decideTempAlarm,
@@ -141,4 +142,31 @@ test('next-watering estimate from the drying trend', () => {
   assert.ok(Math.abs(etaToThresholdHours(49, 35, slope)! - 7) < 0.05);
   assert.equal(etaToThresholdHours(30, 35, slope), 0);
   assert.equal(etaToThresholdHours(50, 35, 0.3), null);
+});
+
+// ── Threshold alerts (dry soil, humidity band, low temperature) ─────
+test('dry-soil alert opens below the pump threshold and closes only after recovery margin', () => {
+  const none = new Set<never>();
+  const open = decideThresholdAlerts(S, x({ soil: 34 }), none);
+  assert.deepEqual(open.map((a) => [a.key, a.action]), [['SOIL_DRY', 'OPEN']]);
+  const isOpen = new Set(['SOIL_DRY'] as const);
+  assert.equal(decideThresholdAlerts(S, x({ soil: 36 }), isOpen).length, 0, 'noise just above threshold keeps it open');
+  assert.deepEqual(decideThresholdAlerts(S, x({ soil: 40 }), isOpen).map((a) => a.action), ['CLOSE']);
+});
+
+test('humidity alert covers both sides of the band', () => {
+  const none = new Set<never>();
+  assert.match(decideThresholdAlerts(S, x({ humidity: 40 }), none)[0].title, /too dry/);
+  assert.match(decideThresholdAlerts(S, x({ humidity: 85 }), none)[0].title, /too humid/);
+  const isOpen = new Set(['HUMIDITY_OUT_OF_RANGE'] as const);
+  assert.equal(decideThresholdAlerts(S, x({ humidity: 79 }), isOpen).length, 0);
+  assert.equal(decideThresholdAlerts(S, x({ humidity: 70 }), isOpen)[0].action, 'CLOSE');
+});
+
+test('low-temperature alert and missing values', () => {
+  const none = new Set<never>();
+  assert.equal(decideThresholdAlerts(S, x({ temperature: 14 }), none)[0].key, 'LOW_TEMPERATURE');
+  assert.equal(decideThresholdAlerts(S, x({ soil: null, humidity: null, temperature: null }), none).length, 0);
+  const isOpen = new Set(['SOIL_DRY', 'HUMIDITY_OUT_OF_RANGE', 'LOW_TEMPERATURE'] as const);
+  assert.equal(decideThresholdAlerts(S, x({ soil: null, humidity: null, temperature: null }), isOpen).length, 0, 'a sensor fault never resolves an alert');
 });

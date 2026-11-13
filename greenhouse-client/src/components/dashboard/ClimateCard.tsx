@@ -7,43 +7,44 @@ import { SensorLineChart } from '@/components/charts/SensorLineChart'
 import { MetricIcon } from '@/components/ui/MetricIcon'
 import { Panel } from '@/components/ui/Panel'
 import { StatusPill } from '@/components/ui/StatusPill'
-import { METRICS, THRESHOLDS, formatValue, metricStatus, seriesFor, trendFor, type MetricKey } from '@/lib/data'
+import type { Settings } from '@/lib/api'
+import { METRICS, SENSOR_KEY, formatValue, pillTone, toPoints, type MetricKey } from '@/lib/data'
 import { useLiveReadings } from './LiveReadingsProvider'
 
 export type ClimateMetric = Exclude<MetricKey, 'soil'>
 
-const DETAILS: Record<ClimateMetric, { caption: string; limitLabel: string; limit: string; variant: 'peak' | 'grid' | 'points' }> = {
+const DETAILS: Record<
+  ClimateMetric,
+  { caption: string; limitLabel: string; limit: (s: Settings) => string; variant: 'peak' | 'grid' | 'points' }
+> = {
   temperature: {
     caption: 'Air temperature',
     limitLabel: 'Buzzer sounds above',
-    limit: `${THRESHOLDS.tempAlarm} °C`,
+    limit: (s) => `${s.tempAlarmThreshold} °C`,
     variant: 'peak',
   },
   humidity: {
     caption: 'Relative humidity',
     limitLabel: 'Healthy range',
-    limit: `${THRESHOLDS.humidityMin}–${THRESHOLDS.humidityMax}%`,
+    limit: (s) => `${s.humidityMin}–${s.humidityMax}%`,
     variant: 'grid',
   },
   light: {
     caption: 'Illuminance at canopy',
     limitLabel: 'Grow light below',
-    limit: `${THRESHOLDS.lightOn.toLocaleString('en-US')} lux`,
+    limit: (s) => `${s.lightOnThreshold.toLocaleString('en-US')} lux`,
     variant: 'points',
   },
 }
 
 export function ClimateCard({ metric }: { metric: ClimateMetric }) {
-  const value = useLiveReadings().readings[metric]
+  const { summary, settings } = useLiveReadings()
+  const sensor = summary.sensors[SENSOR_KEY[metric]]
   const m = METRICS[metric]
-  const status = metricStatus(metric, value)
-  const trend = trendFor(metric)
-  const up = trend >= 0
+  const trend = sensor.lastHourDelta
+  const up = (trend ?? 0) >= 0
   const detail = DETAILS[metric]
-  const series = seriesFor(metric, '24h')
-  const vals = series.map((s) => s.v)
-  const high = Math.max(...vals)
-  const low = Math.min(...vals)
+  const series = toPoints(sensor.series)
 
   return (
     <Panel className="flex min-h-0 flex-col">
@@ -56,17 +57,15 @@ export function ClimateCard({ metric }: { metric: ClimateMetric }) {
         </span>
         <div className="min-w-0 flex-1">
           <h2 className="truncate text-[15px] font-semibold text-ink">{m.label}</h2>
-          <p className="mt-0.5 truncate text-[13px] text-muted">
-            {m.sensor} on {m.pin}
-          </p>
+          <p className="mt-0.5 truncate text-[13px] text-muted">{sensor.sensor}</p>
         </div>
-        <StatusPill tone={status.tone}>{status.text}</StatusPill>
+        <StatusPill tone={pillTone(sensor.status)}>{sensor.status.label}</StatusPill>
       </div>
 
       <div className="flex flex-wrap items-end justify-between gap-x-6 gap-y-2 px-5 pt-5 md:px-6 md:pt-3">
         <div>
           <div className="text-[40px] font-semibold leading-none tracking-tight tabular text-ink">
-            {formatValue(metric, value)}
+            {formatValue(metric, sensor.value)}
             <span className="ml-1 text-xl font-medium text-muted">{m.unit}</span>
           </div>
           <div className="mt-1.5 text-xs text-muted">{detail.caption}</div>
@@ -75,13 +74,13 @@ export function ClimateCard({ metric }: { metric: ClimateMetric }) {
           <div>
             <dt className="text-faint">24h high</dt>
             <dd className="mt-0.5 font-semibold tabular text-ink">
-              {formatValue(metric, high)} {m.unit}
+              {formatValue(metric, sensor.high24h)} {m.unit}
             </dd>
           </div>
           <div>
             <dt className="text-faint">24h low</dt>
             <dd className="mt-0.5 font-semibold tabular text-ink">
-              {formatValue(metric, low)} {m.unit}
+              {formatValue(metric, sensor.low24h)} {m.unit}
             </dd>
           </div>
         </dl>
@@ -95,7 +94,7 @@ export function ClimateCard({ metric }: { metric: ClimateMetric }) {
           variant={detail.variant}
           format={(v) => formatValue(metric, v)}
           formatX={(d) => format(d, 'HH:mm')}
-          formatTip={(d) => format(d, 'EEE HH:mm')}
+          formatTip={(d) => `${format(d, 'EEE HH:mm')} · 15-min avg`}
           yMin={metric === 'light' ? 0 : undefined}
           fill
         />
@@ -104,13 +103,19 @@ export function ClimateCard({ metric }: { metric: ClimateMetric }) {
       <div className="grid grid-cols-2 border-t border-line text-sm short:hidden">
         <div className="px-5 py-4 md:px-6 md:py-3">
           <div className="text-muted">{detail.limitLabel}</div>
-          <div className="mt-0.5 font-semibold tabular text-ink">{detail.limit}</div>
+          <div className="mt-0.5 font-semibold tabular text-ink">{detail.limit(settings)}</div>
         </div>
         <div className="border-l border-line px-5 py-4 md:px-6 md:py-3">
           <div className="text-muted">Last hour</div>
           <div className="mt-0.5 flex items-center gap-1 font-semibold tabular text-ink">
-            {up ? <ArrowUpRight className="h-4 w-4 text-muted" /> : <ArrowDownRight className="h-4 w-4 text-muted" />}
-            {formatValue(metric, Math.abs(trend))} {m.unit}
+            {trend === null ? (
+              '—'
+            ) : (
+              <>
+                {up ? <ArrowUpRight className="h-4 w-4 text-muted" /> : <ArrowDownRight className="h-4 w-4 text-muted" />}
+                {formatValue(metric, Math.abs(trend))} {m.unit}
+              </>
+            )}
           </div>
         </div>
       </div>

@@ -1,6 +1,7 @@
 'use client'
 
 import React from 'react'
+import { Loader2 } from 'lucide-react'
 import { DEVICE_ICONS } from '@/components/ui/icons'
 import { Panel } from '@/components/ui/Panel'
 import { Segmented } from '@/components/ui/Segmented'
@@ -23,16 +24,19 @@ type Props = {
   danger?: boolean
   /** Plain-language description of the rule, shown in automatic mode. */
   summary: React.ReactNode
+  /** What switching on does in manual mode. */
+  manualHint: string
   stats: DeviceStat[]
   /** The rule sliders, shown in automatic mode. */
   children: React.ReactNode
 }
 
-export function DeviceSection({ device, name, sensor, onLabel, offLabel, danger, summary, stats, children }: Props) {
-  const { modes, setMode, manualOn, setManual, isOn } = useAutomation()
+export function DeviceSection({ device, name, sensor, onLabel, offLabel, danger, summary, manualHint, stats, children }: Props) {
+  const { modes, setMode, setManual, isOn, reason, busy, deviceError } = useAutomation()
   const Icon = DEVICE_ICONS[device]
   const on = isOn(device)
   const mode = modes[device]
+  const why = reason(device)
 
   return (
     <Panel>
@@ -48,10 +52,15 @@ export function DeviceSection({ device, name, sensor, onLabel, offLabel, danger,
           <div className="flex flex-wrap items-center gap-2.5">
             <h2 className="text-base font-semibold text-ink">{name}</h2>
             <StatusPill tone={on ? (danger ? 'danger' : 'active') : 'neutral'}>{on ? onLabel : offLabel}</StatusPill>
+            {busy[device] && <Loader2 className="h-4 w-4 animate-spin text-faint" />}
           </div>
-          <p className="mt-0.5 text-[13px] text-muted">{sensor}</p>
+          <p className="mt-0.5 text-[13px] text-muted">
+            {sensor}
+            {why && <span className="text-faint"> · {why}</span>}
+          </p>
+          {deviceError[device] && <p className="mt-1 text-[13px] text-danger">{deviceError[device]}</p>}
         </div>
-        <Segmented<Mode> value={mode} onChange={(m) => setMode(device, m)} options={MODES} />
+        <Segmented<Mode> value={mode} onChange={(m) => m !== mode && setMode(device, m)} options={MODES} />
       </div>
 
       <div className="grid grid-cols-1 border-t border-line lg:grid-cols-12">
@@ -62,7 +71,7 @@ export function DeviceSection({ device, name, sensor, onLabel, offLabel, danger,
               <div className="mt-5 grid grid-cols-1 gap-x-8 gap-y-5 sm:grid-cols-2 xl:grid-cols-3">{children}</div>
             </>
           ) : (
-            <ManualControl name={name} on={manualOn[device]} onChange={(v) => setManual(device, v)} />
+            <ManualControl name={name} hint={manualHint} on={on} busy={busy[device]} onChange={(v) => setManual(device, v)} />
           )}
         </div>
         <DeviceStats stats={stats} />
