@@ -37,6 +37,8 @@ export const config = {
     .split(',')
     .map((s) => s.trim())
     .filter(Boolean),
+  /** Also accept dashboards served from localhost / private LAN addresses (default: on outside production). */
+  allowLanOrigins: bool(process.env.CORS_ALLOW_LAN, !isProd),
 
   /** Cookies: set COOKIE_SAMESITE=none when the dashboard is on a different site than the API (needs HTTPS). */
   cookieSecure: bool(process.env.COOKIE_SECURE, isProd),
@@ -47,11 +49,14 @@ export const config = {
   dashboardAuthRequired: bool(process.env.DASHBOARD_AUTH_REQUIRED, true),
 
   /** Used by `npm run seed` (first start only). */
-  adminEmail: process.env.ADMIN_EMAIL ?? 'admin@greenhouse.local',
+  adminEmail: process.env.ADMIN_EMAIL?.trim() || 'admin@greenhouse.local',
   adminPassword: process.env.ADMIN_PASSWORD,
-  adminName: process.env.ADMIN_NAME ?? 'Greenhouse Admin',
-  seedDeviceName: process.env.DEVICE_NAME ?? 'Greenhouse-1',
+  adminName: process.env.ADMIN_NAME?.trim() || 'Md Rifat',
+  seedDeviceName: process.env.DEVICE_NAME ?? 'Greenhouse',
   seedDeviceApiKey: process.env.DEVICE_API_KEY || undefined,
+
+  /** Google sign-in: OAuth 2.0 Web client ID. Empty = the Google button is hidden. */
+  googleClientId: process.env.GOOGLE_CLIENT_ID?.trim() || undefined,
 
   trustProxy: process.env.TRUST_PROXY ?? (isProd ? '1' : 'false'),
   deviceRateLimitPerMin: num(process.env.DEVICE_RATE_LIMIT_PER_MIN, 120),

@@ -1,15 +1,18 @@
-/** The signed-in user shown in the sidebar account menu. */
-export const CURRENT_USER = {
-  name: 'Amara Reyes',
-  role: 'Admin',
-  email: 'amara@verdant.farm',
-  /** Profile photo in /public, e.g. '/icons/avatar.png'. Leave null to show initials. */
-  avatar: null as string | null,
+import type { User } from './api'
+
+/** Name shown in the sidebar account menu: the account name, or the part of the email before the @. */
+export function displayName(u: Pick<User, 'name' | 'email'>) {
+  return u.name?.trim() || u.email?.split('@')[0] || 'Administrator'
+}
+
+export function roleLabel(role: string) {
+  return role === 'ADMIN' ? 'Admin' : role.charAt(0) + role.slice(1).toLowerCase()
 }
 
 export function initials(name: string) {
   return name
-    .split(/\s+/)
+    .split(/[\s._-]+/)
+    .filter(Boolean)
     .map((p) => p[0])
     .slice(0, 2)
     .join('')

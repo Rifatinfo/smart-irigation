@@ -27,9 +27,10 @@ const issue = (u: { id: string; email: string; role: string }) => ({
   refreshToken: jwtHelper.generateToken({ id: u.id, email: u.email, role: u.role }, config.refreshSecret, config.refreshExpiry),
 });
 
-const setCookies = (res: Response, t: { accessToken: string; refreshToken: string }) => {
+/** remember=false makes the refresh cookie a session cookie (gone when the browser closes). */
+const setCookies = (res: Response, t: { accessToken: string; refreshToken: string }, remember = true) => {
   res.cookie('accessToken', t.accessToken, { ...cookieBase, maxAge: 60 * 60 * 1000 });
-  res.cookie('refreshToken', t.refreshToken, { ...cookieBase, maxAge: 30 * 24 * 60 * 60 * 1000 });
+  res.cookie('refreshToken', t.refreshToken, remember ? { ...cookieBase, maxAge: 30 * 24 * 60 * 60 * 1000 } : cookieBase);
 };
 
 const publicUser = (u: { id: string; email: string; name: string | null; role: string; needPasswordChange: boolean }) => ({
@@ -49,18 +50,79 @@ const loginLimiter = rateLimit({
 router.post(
   '/login',
   loginLimiter,
-  validate(z.object({ email: z.string().email(), password: z.string().min(1) })),
+  validate(z.object({ email: z.string().trim().email(), password: z.string().min(1), remember: z.boolean().optional() })),
   catchAsync(async (req: Request, res: Response) => {
     const user = await prisma.user.findUnique({ where: { email: req.body.email.toLowerCase() } });
     const ok = await bcrypt.compare(req.body.password, user?.password ?? DUMMY_HASH);
     if (!user || !ok || user.status !== 'ACTIVE') throw new AppError(401, 'Invalid email or password');
 
     const tokens = issue(user);
-    setCookies(res, tokens);
+    setCookies(res, tokens, req.body.remember !== false);
     await logActivity({ source: 'AUTH', message: `${user.email} signed in` });
     sendResponse(res, {
       statusCode: 200, success: true, message: 'Logged in',
       data: { user: publicUser(user), needPasswordChange: user.needPasswordChange, accessToken: tokens.accessToken },
+    });
+  }),
+);
+
+/** GET /auth/config - public: which sign-in methods the login page should offer. */
+router.get('/config', (_req, res) => {
+  sendResponse(res, {
+    statusCode: 200,
+    success: true,
+    message: 'Auth config',
+    data: { googleClientId: config.googleClientId ?? null },
+  });
+});
+
+/**
+ * Verifies a Google OAuth access token with Google and returns the verified email.
+ * The token must have been issued to OUR client ID (so a token obtained by another app cannot be replayed here).
+ */
+async function verifyGoogleToken(accessToken: string): Promise<string> {
+  let info: { aud?: string; azp?: string; email?: string; email_verified?: string | boolean; expires_in?: string; error_description?: string };
+  try {
+    const r = await fetch(`https://oauth2.googleapis.com/tokeninfo?access_token=${encodeURIComponent(accessToken)}`, {
+      signal: AbortSignal.timeout(8000),
+    });
+    info = await r.json();
+    if (!r.ok) throw new AppError(401, 'Google sign-in failed: the Google token is invalid or expired');
+  } catch (e) {
+    if (e instanceof AppError) throw e;
+    throw new AppError(502, 'Could not reach Google to verify the sign-in. Check the server’s internet connection.');
+  }
+  if (info.aud !== config.googleClientId && info.azp !== config.googleClientId) {
+    throw new AppError(401, 'Google sign-in failed: token was issued for a different app');
+  }
+  if (!info.email || String(info.email_verified) !== 'true') {
+    throw new AppError(401, 'Google sign-in failed: the Google account has no verified email');
+  }
+  return info.email.toLowerCase();
+}
+
+/** POST /auth/google {accessToken, remember?} - sign in with the Google account whose email matches an admin. */
+router.post(
+  '/google',
+  loginLimiter,
+  validate(z.object({ accessToken: z.string().min(10).max(4096), remember: z.boolean().optional() })),
+  catchAsync(async (req: Request, res: Response) => {
+    if (!config.googleClientId) throw new AppError(400, 'Google sign-in is not configured on the server (GOOGLE_CLIENT_ID)');
+    const email = await verifyGoogleToken(req.body.accessToken);
+
+    const user = await prisma.user.findUnique({ where: { email } });
+    if (!user || user.status !== 'ACTIVE') {
+      await logActivity({ level: 'WARNING', source: 'AUTH', message: `Google sign-in refused for ${email} (no admin account with this email)` });
+      throw new AppError(403, `${email} has no access to this greenhouse. Sign in with the Google account of the admin email.`);
+    }
+
+    const tokens = issue(user);
+    setCookies(res, tokens, req.body.remember !== false);
+    await logActivity({ source: 'AUTH', message: `${user.email} signed in with Google` });
+    sendResponse(res, {
+      statusCode: 200, success: true, message: 'Logged in with Google',
+      // the password is irrelevant for Google sign-in, so don't force the change-password flow
+      data: { user: publicUser(user), needPasswordChange: false, accessToken: tokens.accessToken },
     });
   }),
 );
@@ -79,7 +141,8 @@ router.post(
     const user = await prisma.user.findUnique({ where: { id: payload.id } });
     if (!user || user.status !== 'ACTIVE') throw new AppError(401, 'Account disabled');
     const tokens = issue(user);
-    setCookies(res, tokens);
+    // Only the short-lived access cookie is renewed; the refresh cookie keeps its original lifetime ("keep me signed in" or session).
+    res.cookie('accessToken', tokens.accessToken, { ...cookieBase, maxAge: 60 * 60 * 1000 });
     sendResponse(res, { statusCode: 200, success: true, message: 'Token refreshed', data: { accessToken: tokens.accessToken } });
   }),
 );

@@ -9,23 +9,27 @@
 
 @theme {
   --font-sans: 'Inter', ui-sans-serif, system-ui, sans-serif;
-  --font-display: 'Fraunces', Georgia, serif;
+  /* Headings use the same clean sans as the body (bold), for the fresh "greenhouse app" look */
+  --font-display: 'Inter', ui-sans-serif, system-ui, sans-serif;
 
-  --color-canvas: #f3f2ec;
+  /* Light, airy greens: white surfaces on a faintly green-tinted page */
+  --color-canvas: #f5f9f4;
   --color-surface: #ffffff;
-  --color-sunken: #f8f7f2;
-  --color-ink: #16211b;
-  --color-muted: #5f6b63;
-  --color-faint: #8b958e;
-  --color-line: #e3e1d7;
-  --color-edge: #d2cfc1;
+  --color-sunken: #f3f7f2;
+  --color-ink: #14261a;
+  --color-muted: #55665a;
+  --color-faint: #8a978d;
+  --color-line: #e5ede4;
+  --color-edge: #dbe6da;
 
-  --color-forest: #1e4636;
-  --color-forest-hover: #173a2c;
-  --color-forest-deep: #11261d;
-  --color-forest-line: #24402f;
-  --color-leaf: #a8cf8e;
-  --color-mint: #e7f0e2;
+  /* Primary green (buttons, active filters, links) */
+  --color-forest: #1d8a3a;
+  --color-forest-hover: #17752f;
+  --color-forest-deep: #0f3a1c;
+  --color-forest-line: #2c6b3c;
+  /* Soft green for the active sidebar item, selected chips and highlights */
+  --color-leaf: #ddf1da;
+  --color-mint: #ecf7ea;
 
   --color-temp: #d1603a;
   --color-humid: #3a87a8;
@@ -48,7 +52,11 @@ body,
 
 body {
   font-family: var(--font-sans);
-  background: var(--color-canvas);
+  /* faint green glow in the corners, like morning light in a greenhouse */
+  background:
+    radial-gradient(1200px 600px at 100% -10%, rgba(120, 200, 110, 0.10), transparent 60%),
+    radial-gradient(900px 500px at 0% 110%, rgba(120, 200, 110, 0.08), transparent 60%),
+    var(--color-canvas);
   color: var(--color-ink);
   -webkit-font-smoothing: antialiased;
 }

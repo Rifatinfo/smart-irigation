@@ -59,7 +59,7 @@ export async function getHistory(device: Device, range: RangeKey, fromIso?: stri
     prisma.actuatorEvent.findMany({
       where: { deviceId: device.id, startedAt: { lte: to }, OR: [{ endedAt: null }, { endedAt: { gte: from } }] },
       orderBy: { startedAt: 'asc' },
-      take: 1000,
+      take: 5000,
     }),
   ]);
 

@@ -8,9 +8,9 @@ import { useSensorRange } from './SensorRangeProvider'
 
 /** Comparison table — the whole range at a glance. */
 export function SensorSummaryTable() {
-  const { range } = useSensorRange()
+  const { history, loading } = useSensorRange()
   return (
-    <Panel className="overflow-hidden">
+    <Panel className={`overflow-hidden transition-opacity duration-150 ${loading ? 'opacity-60' : ''}`}>
       <div className="overflow-x-auto">
         <table className="w-full min-w-[720px] text-left text-sm">
           <thead>
@@ -25,7 +25,7 @@ export function SensorSummaryTable() {
           </thead>
           <tbody className="divide-y divide-line">
             {METRIC_ORDER.map((m) => (
-              <SensorSummaryRow key={m} metric={m} range={range} />
+              <SensorSummaryRow key={m} metric={m} history={history} />
             ))}
           </tbody>
         </table>

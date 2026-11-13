@@ -148,6 +148,8 @@ export async function getSummary(device: Device, opts: { withSeries?: boolean } 
       soilMoisture: {
         label: 'Soil moisture', sensor: hw.soil, unit: '%',
         value: x.soil, status: st.soilMoisture,
+        /** Latest raw ADC value from the probe - used for calibration in Settings */
+        raw: latest?.soilRaw ?? null,
         high24h: r(n(ext.soil_hi)), low24h: r(n(ext.soil_lo)),
         lastHourDelta: delta(x.soil, ago?.soilMoisture, 1),
         pumpStartsBelow: settings.soilDryThreshold, pumpStopsAt: settings.soilWetTarget,

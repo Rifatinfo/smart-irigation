@@ -12,9 +12,31 @@ const trust = config.trustProxy;
 app.set('trust proxy', trust === 'true' ? true : trust === 'false' ? false : Number.isNaN(Number(trust)) ? trust : Number(trust));
 app.disable('x-powered-by');
 
+/** localhost and private-network (LAN) origins, e.g. the dashboard opened from a phone at http://192.168.0.10:3000 */
+const isLocalNetworkOrigin = (origin: string) => {
+  try {
+    const { hostname } = new URL(origin);
+    return (
+      hostname === 'localhost' ||
+      /^127\./.test(hostname) ||
+      /^10\./.test(hostname) ||
+      /^192\.168\./.test(hostname) ||
+      /^172\.(1[6-9]|2\d|3[01])\./.test(hostname) ||
+      hostname.endsWith('.local')
+    );
+  } catch {
+    return false;
+  }
+};
+
 app.use(
   cors({
-    origin: config.frontendUrls,
+    origin: (origin, cb) => {
+      if (!origin) return cb(null, true); // curl, ESP32, same-origin
+      if (config.frontendUrls.includes(origin)) return cb(null, true);
+      if (config.allowLanOrigins && isLocalNetworkOrigin(origin)) return cb(null, true);
+      cb(null, false);
+    },
     credentials: true,
   }),
 );

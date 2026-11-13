@@ -26,6 +26,7 @@ export const settingsPatchSchema = z
     pumpMinIntervalMin: z.number().int().min(0).max(1440),
     soilRawDry: z.number().int().min(0).max(65535),
     soilRawWet: z.number().int().min(0).max(65535),
+    pumpFlowLpm: z.number().min(0.01).max(100),
     tempAlarmThreshold: z.number().min(-20).max(80),
     tempAlarmHysteresis: z.number().min(0).max(20),
     tempLowThreshold: z.number().min(-40).max(60),

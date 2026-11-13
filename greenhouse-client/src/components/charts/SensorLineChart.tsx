@@ -43,6 +43,7 @@ export function SensorLineChart({ data, color, unit, format, formatX, formatTip,
   const h = height - padT - padB
 
   const { lo, hi, ticks } = useMemo(() => {
+    if (!data.length) return { lo: 0, hi: 1, ticks: [] as number[] }
     const vals = data.map((d) => d.v)
     let lo = yMin ?? Math.min(...vals)
     let hi = yMax ?? Math.max(...vals)
@@ -57,6 +58,18 @@ export function SensorLineChart({ data, color, unit, format, formatX, formatTip,
     return { lo, hi, ticks }
   }, [data, yMin, yMax])
 
+  if (data.length < 2) {
+    return (
+      <div
+        ref={ref}
+        className={`flex w-full items-center justify-center rounded-xl bg-sunken/60 text-[13px] text-faint ${fill ? 'h-[210px] md:h-full' : ''}`}
+        style={fill ? undefined : { height }}
+      >
+        Chart appears after a few readings
+      </div>
+    )
+  }
+
   const t0 = data[0]?.t.getTime() ?? 0
   const t1 = data[data.length - 1]?.t.getTime() ?? 1
   const x = (t: Date) => padL + ((t.getTime() - t0) / (t1 - t0 || 1)) * w
@@ -67,7 +80,8 @@ export function SensorLineChart({ data, color, unit, format, formatX, formatTip,
   const area = pts.length ? `${line}L${pts[pts.length - 1][0]},${padT + h}L${pts[0][0]},${padT + h}Z` : ''
 
   const xTickCount = Math.max(3, Math.min(7, Math.floor(w / 72)))
-  const xTickIdx = Array.from({ length: xTickCount }, (_, i) => Math.round((i * (data.length - 1)) / (xTickCount - 1)))
+  // unique indices: with only a few points several ticks would land on the same one and draw overlapping labels
+  const xTickIdx = [...new Set(Array.from({ length: xTickCount }, (_, i) => Math.round((i * (data.length - 1)) / (xTickCount - 1))))]
 
   const peakIdx = data.reduce((best, d, i) => (d.v > data[best].v ? i : best), 0)
 

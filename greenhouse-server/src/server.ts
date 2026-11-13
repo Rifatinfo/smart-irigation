@@ -1,6 +1,7 @@
 import { Server } from 'http';
 import app from './app';
 import config from './config';
+import { ensureDefaults } from './services/bootstrap';
 import { startJobs } from './services/jobs';
 import prisma from './shared/prisma';
 
@@ -11,6 +12,13 @@ async function bootstrap() {
     console.error('Cannot reach the database. Check DATABASE_URL and run the migrations (npm run db:deploy).');
     console.error(err);
     process.exit(1);
+  }
+
+  // First start: create the default admin (ADMIN_EMAIL / ADMIN_PASSWORD) and the first device
+  try {
+    await ensureDefaults();
+  } catch (err) {
+    console.error('First-run setup failed (are the migrations applied? npm run db:deploy):', err);
   }
 
   const server: Server = app.listen(config.port, () => {

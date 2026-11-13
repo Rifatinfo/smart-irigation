@@ -4,6 +4,8 @@ import { StatusPill } from '@/components/ui/StatusPill'
 
 type Props = {
   device: DeviceKey
+  /** "Auto mode", "Manual · on until 14:05"… */
+  mode: string
   name: string
   on: boolean
   onText: string
@@ -13,7 +15,7 @@ type Props = {
   danger?: boolean
 }
 
-export function DeviceCell({ device, name, on, onText, offText, rule, footer, danger }: Props) {
+export function DeviceCell({ device, name, mode, on, onText, offText, rule, footer, danger }: Props) {
   const Icon = DEVICE_ICONS[device]
   return (
     <div className="flex flex-col border-line px-5 py-5 md:px-6 [&:not(:first-child)]:border-t md:[&:not(:first-child)]:border-l md:[&:not(:first-child)]:border-t-0">
@@ -27,7 +29,7 @@ export function DeviceCell({ device, name, on, onText, offText, rule, footer, da
         </span>
         <div className="min-w-0 flex-1">
           <div className="text-sm font-semibold text-ink">{name}</div>
-          <div className="text-xs text-faint">Auto mode</div>
+          <div className="truncate text-xs text-faint">{mode}</div>
         </div>
         <StatusPill tone={on ? (danger ? 'danger' : 'active') : 'neutral'}>{on ? onText : offText}</StatusPill>
       </div>

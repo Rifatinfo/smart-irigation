@@ -10,7 +10,7 @@ import { SidebarProvider } from './sidebar/SidebarProvider'
 export function AppShell({ children }: { children: React.ReactNode }) {
   return (
     <SidebarProvider>
-      <div className="flex h-screen w-full overflow-hidden bg-canvas text-ink">
+      <div className="flex h-screen w-full overflow-hidden text-ink">
         <Sidebar />
         <div className="flex min-w-0 flex-1 flex-col">{children}</div>
       </div>

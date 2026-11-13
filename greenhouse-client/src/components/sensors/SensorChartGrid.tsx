@@ -7,11 +7,11 @@ import { useSensorRange } from './SensorRangeProvider'
 
 /** One history graph per sensor, two per row on wide screens. */
 export function SensorChartGrid() {
-  const { range } = useSensorRange()
+  const { range, history } = useSensorRange()
   return (
     <div className="mt-5 grid grid-cols-1 gap-5 xl:grid-cols-2">
       {METRIC_ORDER.map((m) => (
-        <SensorHistoryChart key={m} metric={m} range={range} />
+        <SensorHistoryChart key={m} metric={m} range={range} history={history} />
       ))}
     </div>
   )

@@ -18,6 +18,8 @@ type Props = {
   yMin?: number
   yMax?: number
   axis?: boolean
+  /** Shown instead of the chart when there are fewer than two points. */
+  emptyText?: string
 }
 
 export function LineChart({
@@ -35,6 +37,7 @@ export function LineChart({
   yMin,
   yMax,
   axis = true,
+  emptyText,
 }: Props) {
   const ref = useRef<HTMLDivElement>(null)
   const [width, setWidth] = useState(600)
@@ -55,6 +58,7 @@ export function LineChart({
   const h = height - padT - padB
 
   const { lo, hi, ticks } = useMemo(() => {
+    if (!data.length) return { lo: 0, hi: 1, ticks: [] as number[] }
     const vals = data.map((d) => d.v)
     if (threshold) vals.push(threshold.value)
     if (band) vals.push(...band)
@@ -71,6 +75,14 @@ export function LineChart({
     return { lo, hi, ticks }
   }, [data, threshold, band, yMin, yMax])
 
+  if (data.length < 2) {
+    return (
+      <div ref={ref} className="flex w-full items-center justify-center rounded-xl bg-sunken/60 text-[13px] text-faint" style={{ height }}>
+        {emptyText ?? 'No readings in this period yet'}
+      </div>
+    )
+  }
+
   const t0 = data[0]?.t.getTime() ?? 0
   const t1 = data[data.length - 1]?.t.getTime() ?? 1
   const x = (t: Date) => padL + ((t.getTime() - t0) / (t1 - t0 || 1)) * w
@@ -80,8 +92,9 @@ export function LineChart({
   const area = data.length ? `${line}L${x(data[data.length - 1].t)},${padT + h}L${x(data[0].t)},${padT + h}Z` : ''
 
   const xTickCount = Math.max(2, Math.min(7, Math.floor(w / 110)))
-  const xTicks = Array.from({ length: xTickCount }, (_, i) =>
-    data[Math.round((i * (data.length - 1)) / (xTickCount - 1))]
+  // unique indices: with only a few points several ticks would land on the same one and draw overlapping labels
+  const xTicks = [...new Set(Array.from({ length: xTickCount }, (_, i) => Math.round((i * (data.length - 1)) / (xTickCount - 1))))].map(
+    (i) => data[i],
   ).filter(Boolean)
 
   const onMove = (e: React.MouseEvent) => {
