@@ -23,6 +23,7 @@ export default function DashboardPage() {
         <ConnectionBanner />
         <HeatAlarmBanner />
 
+
         {/* Row 1 — what the plants feel right now. From tablet up, the four cards exactly fill the visible
             area below the header (100cqh of <PageContent> minus its 2×2rem padding), so all four are seen at a glance. */}
         <div className="grid grid-cols-1 gap-5 md:h-[calc(100cqh-4rem)] md:min-h-[460px] md:grid-cols-2 md:grid-rows-2">
